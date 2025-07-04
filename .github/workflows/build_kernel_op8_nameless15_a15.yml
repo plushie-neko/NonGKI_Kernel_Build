@@ -246,7 +246,26 @@ jobs:
           echo "PACK_METHOD=$PACK_METHOD" >> $GITHUB_ENV
 
           if [[ $KERNELSU_METHOD == "shell" ]]; then
-            curl -sSL ${{ env.KERNELSU_SOURCE }} | bash -s ${{ env.KERNELSU_BRANCH }}
+            # Construct the full URL to the setup script
+            if [[ "${{ env.KERNELSU_SOURCE }}" == *"/setup.sh" ]]; then
+              # URL already contains the script path
+              KERNELSU_SCRIPT_URL="${{ env.KERNELSU_SOURCE }}"
+            else
+              # Append the script path
+              KERNELSU_SCRIPT_URL="${{ env.KERNELSU_SOURCE }}/${{ env.KERNELSU_BRANCH }}/kernel/setup.sh"
+            fi
+            
+            echo "KernelSU Script URL: $KERNELSU_SCRIPT_URL"
+            echo "KernelSU Branch: ${{ env.KERNELSU_BRANCH }}"
+            
+            # Download and execute the script with error handling
+            SCRIPT_CONTENT=$(curl -sSL "$KERNELSU_SCRIPT_URL")
+            if [ $? -eq 0 ] && [ -n "$SCRIPT_CONTENT" ]; then
+              echo "$SCRIPT_CONTENT" | bash -s ${{ env.KERNELSU_BRANCH }}
+            else
+              echo "Failed to download KernelSU install script from: $KERNELSU_SCRIPT_URL"
+              exit 1
+            fi
           elif [[ $KERNELSU_METHOD == "manual" ]]; then
             rm -rf KernelSU && rm -rf KernelSU-Next
             git clone ${{ env.KERNELSU_SOURCE }} -b ${{ env.KERNELSU_BRANCH }} ${{ env.KERNELSU_NAME }}

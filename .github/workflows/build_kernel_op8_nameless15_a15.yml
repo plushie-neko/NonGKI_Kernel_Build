@@ -364,6 +364,37 @@ jobs:
           sed -i 's/^CONFIG_BUILD_ARM64_UNCOMPRESSED_KERNEL=y$/# CONFIG_BUILD_ARM64_UNCOMPRESSED_KERNEL is not set/' ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
           sed -i 's/# CONFIG_SECCOMP is not set/CONFIG_SECCOMP=y/' ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
 
+      - name: Disable Kprobes Configuration
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel
+          
+          # List of kprobes-related configs to disable
+          KPROBES_CONFIGS=(
+            "CONFIG_KPROBES"
+            "CONFIG_HAVE_KPROBES"
+            "CONFIG_KPROBE_EVENTS"
+            "CONFIG_KPROBE_EVENT"
+          )
+          
+          # Process each config
+          for config in "${KPROBES_CONFIGS[@]}"; do
+            # Check if config exists in defconfig
+            if grep -q "^${config}=" ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}; then
+              # Config exists, replace it with =n
+              sed -i "s/^${config}=.*/${config}=n/" ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+              echo "Updated existing ${config} to n"
+            elif grep -q "^# ${config} is not set" ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}; then
+              # Config already disabled, no change needed
+              echo "${config} is already disabled"
+            else
+              # Config doesn't exist, add it as disabled
+              echo "${config}=n" >> ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+              echo "Added ${config}=n to defconfig"
+            fi
+          done
+          
+          echo "Kprobes configuration disabled successfully!"
+          
       - name: Setup LXC
         if: env.LXC_ENABLE == 'true'
         run: |

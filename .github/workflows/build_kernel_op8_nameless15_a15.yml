@@ -9,6 +9,8 @@ env:
   KPM_FIX: "true" # Fix Error When Enabling KPM.
   KPM_PATCH_SOURCE: "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU_patch/refs/heads/main/kpm/patch_linux" # patch exec file source
   REKERNEL_ENABLE: "true" # if u need Re:Kernel.
+  PATCHES_SOURCE: "SukiSU-Ultra/SukiSU_patch" # [your_name]/[your_patch] -> gooder123/NonGKI_Patcher
+  PATCHES_BRANCH: "main" # [your_branch] -> main
 
 jobs:
   build:
@@ -57,11 +59,7 @@ jobs:
                   echo "$CONFIG=$(grep -w "$CONFIG" "$CONFIG_ENV" | head -n 1 | cut -d ":" -f 2)" >> $GITHUB_ENV
               else
                   echo "$CONFIG=$(grep -w "$CONFIG" "$CONFIG_ENV" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-              fi
-          done
-
-          # Move patch folder to tmp
-          mv $GITHUB_WORKSPACE/Patches /tmp/
+              _
 
       - name: Free Disk Space (Ubuntu)
         if: env.LXC_ENABLE == 'true'
@@ -185,7 +183,7 @@ jobs:
             wget ${{ env.DEFCONFIG_ORIGIN_DEFCONFIG }} -O $GITHUB_WORKSPACE/device_kernel/Image
             $GITHUB_WORKSPACE/device_kernel/scripts/extract-ikconfig $GITHUB_WORKSPACE/device_kernel/Image > $GITHUB_WORKSPACE/device_kernel/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
           fi
-          echo "KERNEL_VERSION=$(head -n 3 device_kernel/Makefile | grep -E 'VERSION|PATCHLEVEL' | awk '{print $3}' | paste -sd '.')" >> $GITHUB_ENV
+          echo "KERNEL_VERSION=$(	head -n 3 device_kernel/Makefile | grep -E 'VERSION|PATCHLEVEL' | awk '{print $3}' | paste -sd '.')" >> $GITHUB_ENV
 
       - name: Set KSU and SUSFS for DEFCONFIG
         run: |
@@ -212,6 +210,9 @@ jobs:
             echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
             echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
           fi
+          if [[ "${{ env.KPM_ENABLE }}" == "true" ]]; then
+            echo "CONFIG_KPM=y" >> ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          fi
 
       - name: Set Pack Method and KernelSU and SUSFS
         run: |
@@ -223,9 +224,7 @@ jobs:
           if [[ $PACK_METHOD == "Anykernel3" ]]; then
             cd $GITHUB_WORKSPACE/device_kernel
             if [[ -d "Anykernel3" ]]; then
-              echo "Found Anykernel3 in Kernel
-
-!"
+              echo "Found Anykernel3 in Kernel!"
             else
               git clone ${{ env.AK3_SOURCE }} -b ${{ env.AK3_BRANCH }} Anykernel3 --depth=1
             fi
@@ -235,7 +234,7 @@ jobs:
             wget ${{ env.BOOT_SOURCE }} -O $GITHUB_WORKSPACE/boot_source_${{ env.DEVICE_NAME }}.img
             cd device_kernel
           else
-            exit
+            exit 1
           fi
           echo "PACK_METHOD=$PACK_METHOD" >> $GITHUB_ENV
 
@@ -262,7 +261,7 @@ jobs:
             grep -q "source \"drivers/kernelsu/Kconfig\"" "$KERNEL_LOCATION/drivers/Kconfig" || sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" "$KERNEL_LOCATION/drivers/Kconfig"
             echo "KernelSU Settings done."
           else
-            exit
+            exit 1
           fi
           echo "KERNELSU_METHOD=$KERNELSU_METHOD" >> $GITHUB_ENV
           KSU_VERSION=$(cd ${{ env.KERNELSU_NAME }} && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
@@ -270,9 +269,7 @@ jobs:
 
           if [[ "${{ env.SUSFS_ENABLE }}" == true ]]; then
             if [[ "${{ env.SUSFS_FIXED }}" == true ]]; then
-              PATCHES_SOURCE=JackA1ltman/NonGKI_Kernel_Patches
-              PATCHES_BRANCH=op_kernel
-              git clone https://github.com/$PATCHES_SOURCE.git -b $PATCHES_BRANCH NonGKI_Kernel_Patches --depth=1
+              git clone https://github.com/${{ env.PATCHES_SOURCE }}.git -b ${{ env.PATCHES_BRANCH }} NonGKI_Kernel_Patches --depth=1
             fi
             git clone $SUSFS_SOURCE -b $SUSFS_BRANCH susfs4ksu --depth=1
             cp susfs4ksu/kernel_patches/fs/* fs/
@@ -281,24 +278,10 @@ jobs:
             echo "Disabled SUSFS !"
           fi
 
-          # Set KPM
           if [[ "${{ env.KPM_ENABLE }}" == "true" ]]; then
-            if [ -f "include/linux/set_memory.h" ]; then
-              echo "CONFIG_KPM=y" >> ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
-              wget "${{ env.KPM_PATCH_SOURCE }}" -O patch
-              chmod a+x patch
-              echo "Set KPM successfully !"
-            else
-              echo "Your kernel does not support KPM, missing set_memory.h"
-            fi
+            wget "${{ env.KPM_PATCH_SOURCE }}" -O patch
+            chmod a+x patch
           fi
-
-      - name: Fix Error When Enabling KPM
-        if: env.KPM_ENABLE == 'true' && env.KPM_FIX == 'true'
-        run: |
-          cd $GITHUB_WORKSPACE/device_kernel/${{ env.KERNELSU_NAME }}/kernel/kpm
-          cp /tmp/Patches/Patch/fix_kpm.patch ./
-          patch -p1 < fix_kpm.patch || true
 
       - name: Patch Kernel for no-kprobe
         run: |
@@ -317,7 +300,7 @@ jobs:
                   echo "execuated backport patch early successfully."
               else
                   echo "Cannot found normal_patches.sh in build project , please check u file existed in build project !"
-                  false
+                  exit 1
               fi
             elif [[ ${{ env.HOOK_METHOD }} == "syscall" ]]; then
                if [[ -f "/tmp/Patches/syscall_hook_patches_older.sh" ]] && [[ "${{ env.HOOK_OLDER }}" == "true" ]]; then
@@ -348,11 +331,11 @@ jobs:
                    echo "execuated backport patch successfully."
                 else
                    echo "Cannot found syscall_hook_patches.sh in build project , please check u file existed in build project !"
-                   false
+                   exit 1
                fi
             else
               echo "please input vaild option!"
-              false
+              exit 1
             fi
           fi
 
@@ -382,7 +365,7 @@ jobs:
             if grep -q "^${config}=" ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}; then
               sed -i "s/^${config}=.*/${config}=n/" ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
               echo "Updated existing ${config} to n"
-            elif grep -q "^# ${config} is not set" ./arch/arm有什么/configs/${{ env.DEFCONFIG_NAME }}; then
+            elif grep -q "^# ${config} is not set" ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}; then
               echo "${config} is already disabled"
             else
               echo "${config}=n" >> ./arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
@@ -432,14 +415,10 @@ jobs:
         if: env.SUSFS_ENABLE == 'true' && env.SUSFS_FIXED == 'true'
         run: |
           cd $GITHUB_WORKSPACE/device_kernel/
-          cp NonGKI_Kernel_Patches/kona_oos/namespace_fixed.patch ./
-          cp NonGKI_Kernel_Patches/kona_oos/task_mmu_fixed.patch ./
-          patch -p1 < namespace_fixed.patch || true
-          patch -p1 < task_mmu_fixed.patch || true
-          cp /tmp/Patches/Patch/susfs_upgrade_to_157.patch ./
-          cp NonGKI_Kernel_Patches/kona_oos/susfs_upgrade_fixed.patch ./
-          patch -p1 < susfs_upgrade_to_157.patch || true
-          patch -p1 < susfs_upgrade_fixed.patch || true
+          cp NonGKI_Kernel_Patches/op8_patch1.patch ./
+          cp NonGKI_Kernel_Patches/op8_patch2.patch ./
+          patch -p1 < op8_patch1.patch || true
+          patch -p1 < op8_patch2.patch || true
 
       - name: Updated SUSFS Version
         if: env.SUSFS_ENABLE == 'true' && env.SUSFS_UPDATE == 'true'
@@ -454,12 +433,19 @@ jobs:
           cd $GITHUB_WORKSPACE/device_kernel/
           PATCH_FILE="/tmp/Patches/Rekernel/rekernel-${{ env.KERNEL_VERSION }}.patch"
           if [ -f "$PATCH_FILE" ]; then
-            cp /tmp/Patches/Rekernel/rekernel-${{ env.KERNEL_VERSION }}.patch ./
+            cp $PATCH_FILE ./
             patch -p1 < rekernel-${{ env.KERNEL_VERSION }}.patch || true
             echo "Re:Kernel Patched."
           else
-            echo "Your kernel not supported it."
+            echo "Re:Kernel patch not found for kernel version ${{ env.KERNEL_VERSION }}."
           fi
+
+      - name: Fix Error When Enabling KPM
+        if: env.KPM_ENABLE == 'true' && env.KPM_FIX == 'true'
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel/${{ env.KERNELSU_NAME }}/kernel/kpm
+          cp /tmp/Patches/Patch/fix_kpm.patch ./
+          patch -p1 < fix_kpm.patch || true
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -483,28 +469,23 @@ jobs:
         if: env.KPM_ENABLE == 'true'
         run: |
           cd $GITHUB_WORKSPACE/device_kernel
-          if [ -f "patch" ]; then
-            IMAGE_DIR="out/arch/arm64/boot"
-            if [ -f "$IMAGE_DIR/Image.gz" ]; then
-              cd "$IMAGE_DIR"
-              gunzip Image.gz
-              cp ../../patch ./
-              ./patch
-              mv oImage Image
-              gzip Image
-              echo "Patched Image.gz for KPM"
-            elif [ -f "$IMAGE_DIR/Image" ]; then
-              cd "$IMAGE_DIR"
-              cp ../../patch ./
-              ./patch
-              mv oImage Image
-              echo "Patched Image for KPM"
-            else
-              echo "No Image or Image.gz found, cannot patch for KPM"
-              exit 1
-            fi
+          IMAGE_DIR="out/arch/arm64/boot"
+          if [ -f "$IMAGE_DIR/Image.gz" ]; then
+            cd $IMAGE_DIR
+            gunzip Image.gz
+            cp ../../../patch ./
+            ./patch
+            mv oImage Image
+            gzip Image
+            echo "Patched Image.gz for KPM"
+          elif [ -f "$IMAGE_DIR/Image" ]; then
+            cd $IMAGE_DIR
+            cp ../../../patch ./
+            ./patch
+            mv oImage Image
+            echo "Patched Image for KPM"
           else
-            echo "KPM patch script not found"
+            echo "No Image or Image.gz found, cannot patch for KPM"
             exit 1
           fi
 

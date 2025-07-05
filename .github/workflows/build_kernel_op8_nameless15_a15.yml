@@ -59,7 +59,6 @@ jobs:
                   echo "$CONFIG=$(grep -w "$CONFIG" "$CONFIG_ENV" | head -n 1 | cut -d ":" -f 2)" >> $GITHUB_ENV
               else
                   echo "$CONFIG=$(grep -w "$CONFIG" "$CONFIG_ENV" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-              _
 
       - name: Free Disk Space (Ubuntu)
         if: env.LXC_ENABLE == 'true'
